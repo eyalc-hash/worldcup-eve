@@ -92,23 +92,25 @@ function knockoutBetween(snapshot: Predictions, codeA: string, codeB: string) {
   return undefined;
 }
 
-export default defineTool({
-  description:
-    "Win odds and a predicted score for ONE matchup, reported in prose (no widget). Give two team names/codes, or a match number. A real fixture uses its market (group match 1-72, or a decided knockout 73-104); any other pairing falls back to a neutral-site estimate (estimate: true). Every pairing returns a number, so never say a matchup can't be forecast. For how far a team goes overall, use outlook.",
-  inputSchema: z.object({
-    match: z
-      .number()
-      .int()
-      .min(1)
-      .max(104)
-      .optional()
-      .describe("FIFA match number, 1-104."),
-    teamA: z.string().optional().describe("First team name or code."),
-    teamB: z.string().optional().describe("Second team name or code."),
-  }),
-  async execute({ match, teamA, teamB }) {
-    const snapshot = await getPredictions();
+const matchupSchema = z.object({
+  match: z
+    .number()
+    .int()
+    .min(1)
+    .max(104)
+    .optional()
+    .describe("FIFA match number, 1-104."),
+  teamA: z.string().optional().describe("First team name or code."),
+  teamB: z.string().optional().describe("Second team name or code."),
+});
 
+type Matchup = z.infer<typeof matchupSchema>;
+
+// Win odds and predicted score for one matchup, resolved against a snapshot.
+function forecastMatchup(
+  snapshot: Predictions,
+  { match, teamA, teamB }: Matchup,
+) {
     // Knockout match by number: read the decided sides from the bracket slots.
     if (match && match > 72) {
       const home = settledTeam(snapshot, match, "home");
@@ -179,5 +181,19 @@ export default defineTool({
       homeWinPct: odds ? percent(odds.homeWin) : undefined,
       awayWinPct: odds ? percent(odds.awayWin) : undefined,
     };
+}
+
+export default defineTool({
+  description:
+    "Win odds and a predicted score for one or more matchups, reported in prose (no widget). Pass a list of matchups; each gives two team names/codes, or a match number. A real fixture uses its market (group match 1-72, or a decided knockout 73-104); any other pairing falls back to a neutral-site estimate (estimate: true). Every pairing returns a number, so never say a matchup can't be forecast. For how far a team goes overall, use outlook.",
+  inputSchema: z.object({
+    matchups: z
+      .array(matchupSchema)
+      .min(1)
+      .describe("The matchups to forecast."),
+  }),
+  async execute({ matchups }) {
+    const snapshot = await getPredictions();
+    return { forecasts: matchups.map((m) => forecastMatchup(snapshot, m)) };
   },
 });

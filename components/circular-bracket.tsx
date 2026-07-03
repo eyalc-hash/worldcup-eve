@@ -13,8 +13,9 @@ import {
 } from "react";
 
 import {
-  CellPathExplain,
   PopupHeader,
+  type TeamJourney,
+  TeamPopup,
 } from "@/components/widgets/cell-path-explain";
 import { Flag } from "@/components/flags";
 import { Popover } from "@/components/ui/popover";
@@ -60,9 +61,12 @@ export interface BracketNodeRef {
   side?: Side;
 }
 
-/** Road-to-the-final breakdown per team code. A team's flag is tappable only
- *  when it has an entry here. */
+/** Road-to-the-final breakdown per team code. */
 export type TeamPaths = Map<TeamCode, CellPath>;
+
+/** A team's actual World Cup run so far, per team code — shown for every
+ *  locked-in flag (winners and losers), so all of them are tappable. */
+export type TeamJourneys = Map<TeamCode, TeamJourney>;
 
 export interface CircularBracketProps {
   /** R32 occupants: slot → its locked-in team. An unfilled slot shows a "?". */
@@ -79,6 +83,9 @@ export interface CircularBracketProps {
   liveLeader?: Map<number, TeamCode>;
   /** Road to the final per team, making those flags tappable. */
   teamPaths?: TeamPaths;
+  /** Actual run so far per team, so every flag (including knocked-out ones) is
+   *  tappable and its popover opens with what already happened. */
+  teamJourneys?: TeamJourneys;
   /** Show pulsing placeholders while the data is on its way. */
   isLoading?: boolean;
   /** Show each open node's leading candidate as a faded flag instead of "?". */
@@ -636,7 +643,8 @@ function UnsettledNode({
 
 /** A team's flag: green-ringed once it has won this node's match, faded once
  *  knocked out at the next stage. Plain unless a tap does something — opening
- *  the team's road to the final, or selecting the node for the caller. */
+ *  the team's popover (its run so far, plus the road to the final when still
+ *  alive), or selecting the node for the caller. */
 function FlagNode({
   code,
   won,
@@ -666,7 +674,7 @@ function FlagNode({
       type="button"
       onClick={(e) => onToggle(e.currentTarget)}
       aria-label={
-        explainable ? `Show ${code} road to the final` : `Select ${code}`
+        explainable ? `Show ${code}'s World Cup run` : `Select ${code}`
       }
       aria-expanded={open}
       className="group block rounded-full"
@@ -975,8 +983,8 @@ function ChampionNode({
 }
 
 /** The popover content for an open node, or `null` when it has nothing to show:
- *  a locked-in (or guessed) team opens its road to the final; an undecided
- *  match opens its chances list. */
+ *  a locked-in (or guessed) team opens its run so far plus its road to the
+ *  final; an undecided match opens its chances list. */
 function popoverContent(
   ref: BracketNodeRef,
   props: CircularBracketProps,
@@ -985,7 +993,8 @@ function popoverContent(
     ? props.slots?.[slotKey(ref.match, ref.side)]
     : (props.results?.[ref.match] ?? asGuess(props.predictions?.[ref.match]));
   const path = team ? props.teamPaths?.get(team) : undefined;
-  if (path) return <CellPathExplain path={path} />;
+  const journey = team ? props.teamJourneys?.get(team) : undefined;
+  if (path || journey) return <TeamPopup journey={journey} path={path} />;
 
   // Slots carry no market of their own, and a decided match's odds are history.
   if (ref.side || props.results?.[ref.match]) return null;
@@ -1015,6 +1024,7 @@ export function CircularBracket(props: CircularBracketProps) {
     isLoading = false,
     predict,
     teamPaths,
+    teamJourneys,
     onNodeSelect,
     className,
   } = props;
@@ -1029,8 +1039,11 @@ export function CircularBracket(props: CircularBracketProps) {
     );
   };
   const openId = open ? nodeId(open.ref) : null;
+  // A flag is tappable when we have something to show for it: a road to the
+  // final (still alive) or a played-so-far run (any team that has kicked off).
   const explainable = (model: NodeModel) =>
-    !!model.team && !!teamPaths?.has(model.team);
+    !!model.team &&
+    (!!teamPaths?.has(model.team) || !!teamJourneys?.has(model.team));
   // With a select callback, every team flag is tappable, not just explainable ones.
   const selectable = !!onNodeSelect;
   // Node entrances are wave-staggered only on the render where the data replaces

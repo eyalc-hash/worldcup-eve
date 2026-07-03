@@ -3,44 +3,34 @@
 import { cn } from "cnfast";
 import type { EveDynamicToolPart, EveMessage } from "eve/react";
 import { useState } from "react";
-import { useChatAgent } from "@/components/chat/chat-context";
-import {
-  MessageWidgets,
-  messageWidgets,
-} from "@/components/chat/message-widgets";
+import { ChatMarkdown } from "@/components/chat/rich-markdown";
 import {
   assistantActivityLabel,
+  isBusy,
   isRenderableMessage,
   messageKey,
   messageText,
   questionPart,
 } from "@/components/chat/messages";
+import type { ChatView } from "@/components/chat/use-chat";
 import { BallIcon } from "@/components/icons";
 import { Markdown } from "@/components/ui/markdown";
 import { Bubble, Message, MessageAvatar } from "@/components/ui/message";
 import { Suggestion, Suggestions } from "@/components/ui/suggestion";
 
-export function Thread() {
-  const { agent } = useChatAgent();
-  const messages = agent.data.messages;
-  const isBusy = agent.status === "submitted" || agent.status === "streaming";
+export function Thread({ chat }: { chat: ChatView }) {
+  const { messages, status } = chat;
+  const busy = isBusy(status);
   const lastAssistant = messages.findLast((m) => m.role === "assistant");
 
-  // The reply is "in flight" until its text starts streaming. Until then the
-  // assistant bubble shows the activity loader, which morphs into the answer in
-  // place — so only one indicator can ever show and there's no layout shift.
-  const activity =
-    isBusy && (!lastAssistant || messageText(lastAssistant).trim().length === 0)
-      ? lastAssistant
-        ? assistantActivityLabel(lastAssistant)
-        : "Thinking..."
-      : null;
+  // Until the reply's text starts streaming, its bubble shows the activity
+  // loader, which morphs into the answer in place — no layout shift.
+  const awaitingReply =
+    busy && (!lastAssistant || !messageText(lastAssistant).trim());
+  const activity = awaitingReply ? assistantActivityLabel(lastAssistant) : null;
 
   const rows = messages.filter(
-    (m) =>
-      isRenderableMessage(m) ||
-      messageWidgets(m).length > 0 ||
-      (isBusy && m === lastAssistant),
+    (m) => isRenderableMessage(m) || (busy && m === lastAssistant),
   );
 
   return (
@@ -58,9 +48,10 @@ export function Thread() {
         ) : (
           <AssistantRow
             key={message.id}
+            respond={chat.respond}
             message={message}
             index={index}
-            streaming={isBusy && message.metadata?.status === "streaming"}
+            streaming={busy && message.metadata?.status === "streaming"}
             activity={message === lastAssistant ? activity : null}
           />
         ),
@@ -68,28 +59,32 @@ export function Thread() {
 
       {/* The turn is submitted but no assistant message exists yet. */}
       {activity && !lastAssistant && (
-        <AssistantRow streaming activity={activity} index={rows.length} />
+        <AssistantRow
+          respond={chat.respond}
+          streaming
+          activity={activity}
+          index={rows.length}
+        />
       )}
     </div>
   );
 }
 
 function AssistantRow({
+  respond,
   message,
   index,
   streaming,
   activity,
 }: {
+  respond: ChatView["respond"];
   message?: EveMessage;
   index: number;
   streaming: boolean;
   activity: string | null;
 }) {
   const question = message ? questionPart(message) : undefined;
-  const widgets = message ? messageWidgets(message) : [];
-  const text = message
-    ? visibleText(messageText(message), widgets.length > 0)
-    : "";
+  const text = message ? messageText(message) : "";
 
   // Decide the entrance animation once, at mount. A row that first appears
   // mid-flight (activity loader or streaming text) settles in place — the avatar
@@ -109,12 +104,9 @@ function AssistantRow({
       </MessageAvatar>
       <Bubble variant="ghost">
         <div className="flex flex-col gap-3">
-          {question && <QuestionPrompt part={question} />}
-          {text && <Markdown>{text}</Markdown>}
+          {question && <QuestionPrompt respond={respond} part={question} />}
+          {text && <ChatMarkdown>{text}</ChatMarkdown>}
           {!text && !question && activity && <Activity label={activity} />}
-          {/* Hold widgets until the reply finishes: while text streams in above
-              them, an already-drawn widget would otherwise get pushed down. */}
-          {!streaming && <MessageWidgets specs={widgets} />}
         </div>
       </Bubble>
     </Message>
@@ -133,8 +125,13 @@ function Activity({ label }: { label: string }) {
   );
 }
 
-function QuestionPrompt({ part }: { part: EveDynamicToolPart }) {
-  const { agent } = useChatAgent();
+function QuestionPrompt({
+  respond,
+  part,
+}: {
+  respond: ChatView["respond"];
+  part: EveDynamicToolPart;
+}) {
   const request = part.toolMetadata?.eve?.inputRequest;
   if (!request) return null;
   const response = part.toolMetadata?.eve?.inputResponse;
@@ -143,7 +140,6 @@ function QuestionPrompt({ part }: { part: EveDynamicToolPart }) {
     ? (options.find((o) => o.id === response.optionId)?.label ??
       response.optionId)
     : response?.text;
-  const busy = agent.status === "submitted" || agent.status === "streaming";
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -158,31 +154,11 @@ function QuestionPrompt({ part }: { part: EveDynamicToolPart }) {
             <Suggestion
               key={option.id}
               suggestion={option.label}
-              onSelect={() => {
-                if (busy) return;
-                void agent
-                  .send({
-                    inputResponses: [
-                      { requestId: request.requestId, optionId: option.id },
-                    ],
-                  })
-                  .catch(() => {});
-              }}
+              onSelect={() => respond(request.requestId, option.id)}
             />
           ))}
         </Suggestions>
       ) : null}
     </div>
   );
-}
-
-// Drop a trailing list/table that a widget already renders, so it isn't shown
-// twice. Keeps the lead-in prose.
-function visibleText(text: string, hasWidgets: boolean): string {
-  const trimmed = text.trim();
-  if (!hasWidgets || trimmed.length === 0) return trimmed;
-  return trimmed
-    .split(/\n\s*(?:[-*•]|\d+[.)])\s+/u, 1)[0]
-    .split(/\n\s*\|/u, 1)[0]
-    .trim();
 }

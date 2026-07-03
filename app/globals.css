@@ -3,6 +3,16 @@
 /* Let Tailwind pick up the classes Streamdown renders markdown with. */
 @source "../node_modules/streamdown/dist/index.js";
 
+/* Every fenced block in a reply is a widget invocation (```chances, ```match …)
+   that Streamdown renders as a component via plugins.renderers; the app never
+   shows source code. Hide the default code block Streamdown paints for the
+   instant a fence's language is still streaming, so it doesn't flash before the
+   widget resolves. Widget output and inline code aren't code blocks, so they're
+   untouched. */
+[data-streamdown="code-block"] {
+  display: none;
+}
+
 :root {
   color-scheme: dark;
   --background: oklch(0.12 0 0);
@@ -52,11 +62,11 @@
     var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
-  --text-xs: 0.70rem; 
+  --text-xs: 0.7rem;
   --text-sm: 0.85rem;
   --text-base: 0.95rem;
-  --text-lg: 1.20rem;
-  --text-xl: 1.50rem;
+  --text-lg: 1.2rem;
+  --text-xl: 1.5rem;
   --text-2xl: 1.95rem;
 
   --radius-sm: calc(var(--radius) * 0.6);
@@ -261,20 +271,6 @@
   50% {
     box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 24%, transparent);
   }
-}
-
-/* soft halo behind the empty-state mark */
-.wc-halo {
-  position: absolute;
-  inset: -90%;
-  background: radial-gradient(
-    circle at center,
-    color-mix(in oklab, var(--foreground) 13%, transparent),
-    transparent 68%
-  );
-  filter: blur(6px);
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* submit button — the up-arrow morphs into a soccer ball that kicks up and out

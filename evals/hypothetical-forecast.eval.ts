@@ -6,8 +6,8 @@ export default defineEval({
   async test(t) {
     await t.send("What are the odds Mexico beats England?");
 
-    t.completed();
-    t.calledTool("get_match_forecast");
+    t.succeeded();
+    t.calledTool("odds");
     t.noFailedActions();
     t.judge.autoevals.closedQA(
       "Does the answer give win-probability estimates for Mexico vs England, rather than refusing because they haven't been drawn together?",

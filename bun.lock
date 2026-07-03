@@ -8,13 +8,14 @@
         "@tanstack/react-query": "^5.101.1",
         "@vercel/analytics": "^2.0.1",
         "@vercel/blob": "^2.5.0",
+        "@vercel/firewall": "^1.2.1",
         "@vercel/functions": "^3.7.2",
         "ai": "7.0.0-beta.178",
         "bottleneck": "^2.19.5",
         "class-variance-authority": "^0.7.1",
         "cnfast": "^0.0.8",
         "date-fns": "^4.4.0",
-        "eve": "^0.12.0",
+        "eve": "^0.18.0",
         "geist": "^1.7.2",
         "lucide-react": "^1.21.0",
         "next": "^16.2.9",
@@ -364,6 +365,8 @@
 
     "@vercel/cli-exec": ["@vercel/cli-exec@1.0.0", "", { "dependencies": { "execa": "5.1.1" } }, "sha512-kQF8LGie/Hbdq9/psJxLE7owRTcqMQMhgybU04gCeR7cbQAr5t8OrjefDNColJv1QSSucFt4pLwRiARVmlOnug=="],
 
+    "@vercel/firewall": ["@vercel/firewall@1.2.1", "", {}, "sha512-WlxjEPpf+GWYMontNNZqZjvLL40ziGwy9swwI9da/L1fB/syAO1S2fMtlBXkp4EGVF6nlXSKmwvkUd6YPWJbbg=="],
+
     "@vercel/functions": ["@vercel/functions@3.7.2", "", { "dependencies": { "@vercel/oidc": "3.6.2" }, "peerDependencies": { "@aws-sdk/credential-provider-web-identity": "*", "ws": ">=8" }, "optionalPeers": ["@aws-sdk/credential-provider-web-identity", "ws"] }, "sha512-5ZH3vUeFXbpXazWnSfOcnf9q+upMdTbdpE1z9FBPrhZjhWtaQa3L95jRHXsE7LBecGjSOdlvVkac/kz2WCJg8A=="],
 
     "@vercel/oidc": ["@vercel/oidc@3.6.2", "", { "dependencies": { "@vercel/cli-config": "0.2.0", "@vercel/cli-exec": "1.0.0", "jose": "^5.9.6" } }, "sha512-1X8B+Za3JAh+FJQ6xLqFds4M/SBbLpEDJMNe+QcaQoqNXLEV8zjGl0eJ8ekj4ObDYC2jXK6fvaa3wRadIfkP8w=="],
@@ -540,7 +543,7 @@
 
     "estree-util-is-identifier-name": ["estree-util-is-identifier-name@3.0.0", "", {}, "sha512-hFtqIDZTIUZ9BXLb8y4pYGyk6+wekIivNVTcmvk8NoOh+VeRn5y6cEHzbURrWbfp1fIqdVipilzj+lfaadNZmg=="],
 
-    "eve": ["eve@0.12.0", "", { "dependencies": { "nitro": "3.0.260610-beta" }, "peerDependencies": { "@opentelemetry/api": "^1.0.0", "@sveltejs/kit": "^2.0.0", "ai": "7.0.0-beta.178", "braintrust": "^3.0.0", "just-bash": "^3.0.0", "microsandbox": "^0.5.0", "next": "^16.0.0", "nuxt": "^4.0.0", "react": "^19.0.0", "svelte": "^5.0.0", "vite": "^8.0.0", "vue": "^3.5.0" }, "optionalPeers": ["@opentelemetry/api", "@sveltejs/kit", "braintrust", "just-bash", "microsandbox", "next", "nuxt", "react", "svelte", "vite", "vue"], "bin": { "eve": "./bin/eve.js" } }, "sha512-SKlO6mqY4Eo24QGBAnxNkKORFALQhBQefU58k9kqHnmKkD5QXvaHiaxaJFet1Pu646mMtW3VxbcxU9fQt/dkPg=="],
+    "eve": ["eve@0.18.0", "", { "dependencies": { "nitro": "3.0.260610-beta" }, "peerDependencies": { "@opentelemetry/api": "^1.0.0", "ai": "^7.0.0", "braintrust": "^3.0.0", "just-bash": "^3.0.0", "microsandbox": "^0.5.0" }, "optionalPeers": ["@opentelemetry/api", "braintrust", "just-bash", "microsandbox"], "bin": { "eve": "./bin/eve.js" } }, "sha512-vEYiZe5D3m1s0UvuS5oSsNaJ10PD3oXzmwY1dLxlRncPjHZNGlmb84fG//KOU/HI6AsQuL3/gvgxUuS48jCRnw=="],
 
     "eventsource-parser": ["eventsource-parser@3.1.0", "", {}, "sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg=="],
 

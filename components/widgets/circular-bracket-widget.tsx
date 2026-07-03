@@ -1,24 +1,32 @@
 "use client";
 
-import { useMemo } from "react";
+import { Info } from "lucide-react";
+import { cn } from "cnfast";
+import { useMemo, useState } from "react";
 
 import {
   type Candidate,
-  CircularBracketCard,
-  CircularBracketRing,
-  type CircularBracketView,
+  CircularBracket,
+  type CircularBracketProps,
+  type SlotKey,
+  slotKey,
+  type TeamCode,
   type TeamJourneys,
   type TeamPaths,
-} from "@/components/widgets/circular-bracket-card";
+} from "@/components/circular-bracket";
 import type {
   JourneyLeg,
   TeamJourney,
 } from "@/components/widgets/cell-path-explain";
 import { usePredictions, useResults } from "@/components/widgets/queries";
+import { Card } from "@/components/ui/card";
 import type { Predictions } from "@/lib/predictions";
 import { cellPath } from "@/lib/predictions/team-path";
 import type { MatchResult, Results } from "@/lib/results";
 import { matchByNumber, type Round, teamById } from "@/lib/tournament";
+
+// A slot occupant this likely is treated as locked in — shown as a flag.
+const CONFIRMED = 0.99;
 
 const named = (c: { code: string; probability: number }): Candidate => ({
   code: c.code,
@@ -130,7 +138,7 @@ function teamJourney(
       match: m.n,
       roundLabel: roundLabelOf(m.n),
       opponent: opp.code,
-      score: `${mine.score ?? 0}\u2013${opp.score ?? 0}`,
+      score: `${mine.score ?? 0}–${opp.score ?? 0}`,
       result,
       live: m.status === "live",
     };
@@ -144,69 +152,61 @@ function teamJourney(
   };
 }
 
-// Played knockout matches, by match number → the actual winner (probability 1).
-// These come from real results and override the market's odds, so a finished
-// match shows its winner's flag instead of a still-open "?".
-function decidedWinners(results?: Results): Map<number, Candidate> {
-  const decided = new Map<number, Candidate>();
+// Played knockout matches, by match number → the actual winner.
+function decidedWinners(results?: Results): Record<number, TeamCode> {
+  const decided: Record<number, TeamCode> = {};
   if (!results) return decided;
   const byNumber = new Map(results.matches.map((m) => [m.n, m]));
   for (const [num, side] of Object.entries(results.knockoutPicks)) {
     const match = byNumber.get(Number(num));
     const team = side === "home" ? match?.home : match?.away;
-    if (team?.code)
-      decided.set(Number(num), {
-        code: team.code,
-        name: teamById[team.code]?.name,
-        probability: 1,
-      });
+    if (team?.code) decided[Number(num)] = team.code;
   }
   return decided;
 }
 
-// Derive the circular view: per R32 slot the teams that could fill it, per match
-// each contender's chance to win it (i.e. advance), the real winner of any
-// finished match, and the title odds.
-function circularView(
+// Map the shared predictions + real results onto the bracket's data props: the
+// locked-in R32 occupants, each played match's winner, and per-match candidates
+// with start-of-day baselines (the final's entry carries the title odds).
+function bracketData(
   predictions: Predictions,
   results?: Results,
-): CircularBracketView {
+): CircularBracketProps {
   const decided = decidedWinners(results);
 
   // Start-of-day baseline counterparts, to paint the move since the day's start.
-  const baselineSlots = new Map(
-    predictions.baseline.slots.map((s) => [
-      `${s.match}:${s.side}`,
-      baselineMap(s.candidates),
-    ]),
-  );
+  // Fall back to the live outputs when a snapshot predates the `baseline` field
+  // (e.g. a stale cross-deploy cache entry), so deltas are simply zero.
+  const baseline = predictions.baseline ?? predictions;
   const baselineMatch = new Map(
-    Object.entries(predictions.baseline.matchWinOdds).map(([match, cands]) => [
+    Object.entries(baseline.matchWinOdds).map(([match, cands]) => [
       Number(match),
       baselineMap(cands),
     ]),
   );
 
-  const slotOdds = new Map<string, Candidate[]>();
+  const slots: Record<SlotKey, TeamCode> = {};
   for (const slot of predictions.slots) {
-    const key = `${slot.match}:${slot.side}`;
-    slotOdds.set(key, withBaseline(slot.candidates, baselineSlots.get(key)));
+    const top = slot.candidates[0];
+    if (top && top.probability >= CONFIRMED)
+      slots[slotKey(slot.match, slot.side)] = top.code;
   }
 
-  // Each contender's chance to win the match — a finished match is pinned to
-  // its real winner (no baseline split: it's settled).
-  const matchOdds = new Map<number, Candidate[]>();
+  // Each contender's chance to win the match; a played match needs no market.
+  const matchOdds: Record<number, Candidate[]> = {};
   for (const [match, candidates] of Object.entries(predictions.matchWinOdds)) {
     const num = Number(match);
-    const win = decided.get(num);
-    matchOdds.set(
-      num,
-      win ? [win] : withBaseline(candidates, baselineMatch.get(num)),
-    );
+    if (num in decided) continue;
+    matchOdds[num] = withBaseline(candidates, baselineMatch.get(num));
   }
+  // The centre node reads the final's entry as the title odds.
+  matchOdds[104] = withBaseline(
+    predictions.bracketChampion,
+    baselineMap(baseline.bracketChampion),
+  );
 
   const live = new Set<number>();
-  const liveLeader = new Map<number, string>();
+  const liveLeader = new Map<number, TeamCode>();
   for (const m of results?.matches ?? []) {
     if (m.status !== "live") continue;
     live.add(m.n);
@@ -216,31 +216,21 @@ function circularView(
     else if (away > home && m.away.code) liveLeader.set(m.n, m.away.code);
   }
 
-  return {
-    slotOdds,
-    matchOdds,
-    decided,
-    live,
-    liveLeader,
-    championOdds: withBaseline(
-      predictions.bracketChampion,
-      baselineMap(predictions.baseline.bracketChampion),
-    ),
-  };
+  return { slots, results: decided, predictions: matchOdds, live, liveLeader };
 }
 
-/** Merges the shared predictions with real results into the view, the per-team
- *  road-to-the-final paths, and each team's actual run so far — everything the
- *  bracket paints onto the radial skeleton. */
+/** Merges the shared predictions with real results into the bracket's data
+ *  props, the per-team road-to-the-final paths, and each team's actual run so
+ *  far. */
 function useBracketData(): {
-  view?: CircularBracketView;
+  data?: CircularBracketProps;
   teamPaths?: TeamPaths;
   teamJourneys?: TeamJourneys;
 } {
   const predictions = usePredictions();
   const results = useResults();
-  const view = useMemo(
-    () => (predictions ? circularView(predictions, results) : undefined),
+  const data = useMemo(
+    () => (predictions ? bracketData(predictions, results) : undefined),
     [predictions, results],
   );
   // Road to the final per team still alive. The path starts at the round each
@@ -280,32 +270,134 @@ function useBracketData(): {
     }
     return map;
   }, [results, teamPaths]);
-  return { view, teamPaths, teamJourneys };
+  return { data, teamPaths, teamJourneys };
 }
 
-/** Connected circular bracket: merges the shared predictions with real results
- *  and paints them onto the radial skeleton. */
-export function CircularBracketWidget() {
-  const { view, teamPaths, teamJourneys } = useBracketData();
-  // Market predictions start off; users opt in via the in-card toggle.
+const HELP_TEXT =
+  "Tap an open node to see each team's chance of reaching the next round, or a locked-in flag to see its World Cup run and road to the final. The chances are computed from the betting market and refresh every minute.";
+
+/** Header info affordance — a popover on tap (native `title` is hover-only). */
+function CircularBracketHelp() {
+  const [open, setOpen] = useState(false);
   return (
-    <CircularBracketCard
-      view={view}
-      teamPaths={teamPaths}
-      teamJourneys={teamJourneys}
-    />
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="How to read this bracket"
+        aria-expanded={open}
+        className="flex cursor-pointer items-center text-muted-foreground/55 transition-colors hover:text-muted-foreground"
+      >
+        <Info className="size-3.5" />
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          {/* Above the bracket nodes (z-30), which the card isolates. */}
+          <div className="absolute top-full right-0 z-50 mt-1.5 w-64 rounded-md border border-surface-border bg-surface-2 p-2 text-xs leading-relaxed text-muted-foreground shadow-lg">
+            {HELP_TEXT}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Compact header switch to turn the predicted-flags overlay on or off. */
+function PredictToggle({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Show market predictions"
+      onClick={() => onChange(!on)}
+      className="flex cursor-pointer items-center gap-1.5"
+    >
+      <span className="text-xs font-medium text-muted-foreground/70">
+        Show market predictions
+      </span>
+      <span
+        className={cn(
+          "relative flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors",
+          on ? "bg-pick" : "bg-surface-border",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute size-2.5 rounded-full bg-card transition-transform",
+            on ? "translate-x-3" : "translate-x-0.5",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
+/** Connected circular bracket in its chat-widget card: header, help, the
+ *  market-predictions toggle and the ring itself. */
+export function CircularBracketWidget({
+  predict: predictDefault = false,
+}: {
+  /** Seed the market-predictions overlay on (users can still toggle it off). */
+  predict?: boolean;
+}) {
+  const { data, teamPaths, teamJourneys } = useBracketData();
+  const [predict, setPredict] = useState(predictDefault);
+  return (
+    // `isolate` keeps the nodes' z-index inside this card so they don't paint
+    // over the page's sticky section header.
+    <Card className="isolate">
+      <div className="flex h-7 items-center gap-1.5 border-b border-surface-divider px-3">
+        <span className="shrink-0 text-xs font-medium tracking-wide text-foreground/70">
+          Prediction bracket
+        </span>
+        <span className="min-w-0 truncate text-xs text-muted-foreground/55">
+          · tap a node to see its chances
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <CircularBracketHelp />
+        </div>
+      </div>
+      <div className="px-2 py-4 sm:px-3">
+        <div className="mb-2 flex justify-end px-1">
+          <PredictToggle on={predict} onChange={setPredict} />
+        </div>
+        <CircularBracket
+          {...data}
+          teamPaths={teamPaths}
+          teamJourneys={teamJourneys}
+          isLoading={!data}
+          predict={predict}
+          className="max-w-[680px]"
+        />
+      </div>
+    </Card>
   );
 }
 
 /** The bracket ring without the card chrome, for the home hero. The predicted
  *  flags overlay stays off here — locked-in teams show, undecided nodes stay "?". */
 export function HomeBracket() {
-  const { view, teamPaths, teamJourneys } = useBracketData();
+  const { data, teamPaths, teamJourneys } = useBracketData();
   return (
-    <CircularBracketRing
-      view={view}
+    <CircularBracket
+      {...data}
       teamPaths={teamPaths}
       teamJourneys={teamJourneys}
+      isLoading={!data}
     />
   );
 }

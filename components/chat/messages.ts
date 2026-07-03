@@ -2,7 +2,13 @@ import type {
   EveDynamicToolPart,
   EveMessage,
   EveMessageInputRequest,
+  UseEveAgentStatus,
 } from "eve/react";
+
+/** Whether a turn is in flight — the composer and thread key off this. */
+export function isBusy(status: UseEveAgentStatus): boolean {
+  return status === "submitted" || status === "streaming";
+}
 
 /** Concatenate the renderable text parts of an Eve message. */
 export function messageText(message: EveMessage): string {
@@ -45,27 +51,20 @@ export function activeQuestion(
 }
 
 const toolActivityLabels: Record<string, string> = {
-  get_match_detail: "Looking up the match...",
-  get_match_prediction: "Checking the predictions",
-  get_match_results: "Checking the results...",
-  get_group_standings: "Checking the standings...",
-  get_match_forecast: "Checking the predictions...",
-  get_match_schedule: "Checking the schedule...",
-  get_match_venues: "Checking the venues...",
-  get_best_thirds: "Checking the third-place race...",
-  show_thirds_ranking: "Pulling up the third-place table...",
-  show_bracket: "Pulling up the prediction bracket...",
-  show_knockout_match: "Pulling up the match prediction...",
-  show_team_path: "Tracing the road to the final...",
-  show_group_standings: "Pulling up the group table...",
-  show_matches: "Pulling up the matches...",
+  matches: "Checking the matches...",
+  standings: "Checking the standings...",
+  odds: "Checking the odds...",
+  outlook: "Checking the predictions...",
+  convert_time: "Checking the time...",
 };
 
 function getToolActivityLabel(toolName: string): string | undefined {
   return toolActivityLabels[toolName];
 }
 
-export function assistantActivityLabel(message: EveMessage): string {
+export function assistantActivityLabel(message?: EveMessage): string {
+  if (!message) return "Thinking...";
+
   const latestTool = message.parts
     .filter((part) => part.type === "dynamic-tool")
     .at(-1);

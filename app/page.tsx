@@ -1,92 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Suggestion, Suggestions } from "@/components/ui/suggestion";
-import { useChatNav } from "@/components/chat/chat-context";
-import { Composer } from "@/components/composer";
-import { EveAttribution } from "@/components/eve";
-import { HomeBracket } from "@/components/widgets/circular-bracket-widget";
+import { usePathname } from "next/navigation";
 
-const SUGGESTIONS = [
-  "Which matches are playing today?",
-  "Who are the best third-placed teams?",
-  "Who is most likely to play in match 100?",
-  "Where did Argentina play their last match?",
-  "What is the predicted bracket to the finals?",
-];
+import { Chat } from "@/components/chat/chat";
+import { Home } from "@/components/home";
 
-function EmptyState() {
-  const { start } = useChatNav();
-  const handleSuggestion = useCallback(
-    (suggestion: string) => {
-      start(suggestion);
-    },
-    [start],
-  );
-
-  return (
-    <div className="flex min-h-full flex-col items-center p-4 text-center">
-      <div className="my-auto flex w-full flex-col items-center">
-        <h1 className="animate-fade-up text-xl leading-[1.15] font-semibold tracking-tight text-balance text-foreground sm:text-2xl">
-          Ask anything about the
-          <br />
-          2026 World Cup
-        </h1>
-
-        <div
-          className="animate-fade-up mt-4 w-full max-w-lg"
-          style={{ animationDelay: "120ms" }}
-        >
-          <HomeBracket />
-        </div>
-
-        <div
-          className="animate-fade-up mt-8 w-full max-w-2xl"
-          style={{ animationDelay: "180ms" }}
-        >
-          <Suggestions className="justify-center">
-            {SUGGESTIONS.map((suggestion) => (
-              <Suggestion
-                key={suggestion}
-                suggestion={suggestion}
-                onSelect={handleSuggestion}
-              />
-            ))}
-          </Suggestions>
-        </div>
-
-        <div
-          className="animate-fade-up my-4 font-mono"
-          style={{ animationDelay: "240ms" }}
-        >
-          <EveAttribution />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function Page() {
-  const { start } = useChatNav();
-  const [input, setInput] = useState("");
-
-  const handleSubmit = useCallback(() => {
-    start(input);
-    setInput("");
-  }, [start, input]);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-        <EmptyState />
-      </div>
-      <Composer
-        value={input}
-        onChange={setInput}
-        onSubmit={handleSubmit}
-        onStop={() => {}}
-        status="ready"
-      />
-    </div>
-  );
+// Starting a chat claims its /chat/<id> URL with pushState (shallow routing),
+// so this page keeps rendering — as the conversation — until a real
+// navigation; direct loads of /chat/<id> go through its own route.
+export default function HomePage() {
+  const pathname = usePathname();
+  const id = pathname.startsWith("/chat/")
+    ? pathname.slice("/chat/".length)
+    : null;
+  return id ? <Chat key={id} id={id} /> : <Home />;
 }

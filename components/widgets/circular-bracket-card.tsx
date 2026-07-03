@@ -705,6 +705,7 @@ function FlagNode({
   size,
   explainable,
   advanced,
+  eliminated,
   openId,
   onToggle,
 }: NodeProps & {
@@ -713,10 +714,17 @@ function FlagNode({
   size: string;
   explainable: boolean;
   advanced: boolean;
+  eliminated: boolean;
 }) {
   const ringClass = advanced ? "ring-pick" : "ring-surface-divider";
   if (!explainable)
-    return <RoundFlag code={code} size={size} className={ringClass} />;
+    return (
+      <RoundFlag
+        code={code}
+        size={size}
+        className={cn(ringClass, eliminated && "opacity-40")}
+      />
+    );
   const open = openId === id;
   return (
     <button
@@ -732,6 +740,7 @@ function FlagNode({
         className={cn(
           "transition-[filter] group-hover:brightness-110",
           open ? "ring-foreground/80" : ringClass,
+          eliminated && "opacity-40",
         )}
       />
     </button>
@@ -837,6 +846,7 @@ interface NodeModel {
   flagCode?: string;
   predictedCode?: string;
   advanced: boolean;
+  eliminated: boolean;
   explainable: boolean; // the locked-in flag opens a road-to-the-final breakdown
   live: boolean; // the node's match is in progress
   liveLeaderCode?: string; // team currently ahead, while the match is live
@@ -851,6 +861,7 @@ function slotModel(
   const top = lead(odds);
   const flagCode = confirmed(odds) ? top?.code : undefined;
   const winner = view?.decided.get(pos.match)?.code;
+  const eliminated = !!flagCode && !!winner && winner !== flagCode;
   return {
     id: `slot:${pos.match}:${pos.side}`,
     x: pos.x,
@@ -858,6 +869,7 @@ function slotModel(
     flagCode,
     predictedCode: top?.code,
     advanced: !!flagCode && winner === flagCode,
+    eliminated,
     explainable: !!flagCode && !!teamPaths?.has(flagCode),
     live: view?.live.has(pos.match) ?? false,
     liveLeaderCode: view?.liveLeader.get(pos.match),
@@ -871,6 +883,9 @@ function matchModel(
 ): NodeModel {
   const flagCode = view?.decided.get(node.match)?.code;
   const top = lead(view?.matchOdds.get(node.match));
+  const nextMatch = matchByNumber[node.match].feedsInto;
+  const nextWinner = nextMatch ? view?.decided.get(nextMatch)?.code : undefined;
+  const eliminated = !!flagCode && !!nextWinner && nextWinner !== flagCode;
   return {
     id: `match:${node.match}`,
     x: node.x,
@@ -878,6 +893,7 @@ function matchModel(
     flagCode,
     predictedCode: top?.code,
     advanced: !!flagCode,
+    eliminated,
     explainable: !!flagCode && !!teamPaths?.has(flagCode),
     live: view?.live.has(node.match) ?? false,
     liveLeaderCode: view?.liveLeader.get(node.match),
@@ -945,6 +961,7 @@ function BracketNode({
                   size={NODE_SIZE}
                   explainable={model.explainable}
                   advanced={model.advanced}
+                  eliminated={model.eliminated}
                   openId={openId}
                   onToggle={onToggle}
                 />

@@ -148,7 +148,7 @@ function JourneyRow({ leg }: { leg: JourneyLeg }) {
         {leg.result ? (
           <span
             className={cn(
-              "rounded px-1 text-[10px] font-semibold",
+              "inline-flex w-4 justify-center rounded text-[10px] font-semibold",
               RESULT_STYLE[leg.result],
             )}
           >

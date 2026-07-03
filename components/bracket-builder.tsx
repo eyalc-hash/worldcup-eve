@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, Share2 } from "lucide-react";
+import { cn } from "cnfast";
+import { Check, Copy, Share2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { shareBracket } from "@/app/bracket/actions";
+import { shareBracket } from "@/app/arena/actions";
 import {
   type BracketNodeRef,
   CircularBracket,
@@ -11,37 +12,14 @@ import {
   slotKey,
   type TeamCode,
 } from "@/components/circular-bracket";
-import { Button } from "@/components/ui/button";
+import { XIcon } from "@/components/icons";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { buildBoard } from "@/lib/arena/board";
 import type { Results } from "@/lib/results";
-import { matchByNumber, teamById } from "@/lib/tournament";
+import { matchByNumber } from "@/lib/tournament";
 
 type Picks = Record<number, TeamCode>;
-
-// R32 occupants from the scoreboard. ESPN uses slot placeholders ("2A") until
-// a side is settled, so only real team codes count as occupants.
-function confirmedSlots(results: Results): Record<SlotKey, TeamCode> {
-  const slots: Record<SlotKey, TeamCode> = {};
-  for (const m of results.matches) {
-    if (matchByNumber[m.n]?.round !== "R32") continue;
-    for (const side of ["home", "away"] as const) {
-      const code = m[side].code;
-      if (teamById[code]) slots[`${m.n}:${side}`] = code;
-    }
-  }
-  return slots;
-}
-
-// Played knockout matches, by match number → the actual winner.
-function playedWinners(results: Results): Record<number, TeamCode> {
-  const winners: Record<number, TeamCode> = {};
-  const byNumber = new Map(results.matches.map((m) => [m.n, m]));
-  for (const [num, side] of Object.entries(results.knockoutPicks)) {
-    const match = byNumber.get(Number(num));
-    const code = side === "home" ? match?.home.code : match?.away.code;
-    if (code) winners[Number(num)] = code;
-  }
-  return winners;
-}
 
 /** Advance the tapped node's team into the next match. Confirmed results can't
  *  be overridden, and replacing a previous pick also clears the displaced team
@@ -69,81 +47,181 @@ function advance(
   return next;
 }
 
-/** Saves the picks under a fresh share id and copies its link. The status is
- *  remembered with the picks it was for, so editing the bracket (a new picks
- *  object) resets the button to its idle label by itself. */
-function ShareButton({ picks }: { picks: Picks }) {
-  const [last, setLast] = useState<{
-    picks: Picks;
-    status: "saving" | "copied" | "error";
-  } | null>(null);
-  const status = last?.picks === picks ? last.status : undefined;
+const tweetHref = (name: string, url: string) =>
+  `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+    `${name}'s 2026 World Cup bracket — can you beat it?`,
+  )}&url=${encodeURIComponent(url)}`;
 
-  const share = async () => {
-    setLast({ picks, status: "saving" });
+/** The link handed back once a bracket is shared: the URL to copy, a copy
+ *  button, and a share-on-X button. */
+function ShareResult({ name, url }: { name: string; url: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="flex w-full max-w-md flex-col gap-2">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-surface py-1 pr-1 pl-2.5">
+        <input
+          readOnly
+          value={url}
+          onFocus={(e) => e.currentTarget.select()}
+          className="min-w-0 flex-1 bg-transparent text-left text-sm text-muted-foreground focus:outline-none"
+          aria-label="Shareable link"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={copy}
+          className={cn("shrink-0", copied && "text-pick")}
+        >
+          {copied ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <a
+        href={tweetHref(name, url)}
+        target="_blank"
+        rel="noreferrer"
+        className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+      >
+        <XIcon className="size-3.5" />
+        Share on X
+      </a>
+    </div>
+  );
+}
+
+/** The share flow, in a modal: enter a name, get back a link to copy or post to
+ *  X. The result is remembered with the picks it was for, so editing the bracket
+ *  (a new picks object) asks for a fresh link. */
+function ShareBracket({ picks }: { picks: Picks }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const [result, setResult] = useState<{
+    picks: Picks;
+    name: string;
+    url: string;
+  } | null>(null);
+
+  const current = result?.picks === picks ? result : null;
+  const empty = Object.keys(picks).length === 0;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (busy || !trimmed || empty) return;
+    setBusy(true);
+    setError(false);
     try {
-      const id = await shareBracket(picks);
+      const id = await shareBracket(picks, trimmed);
       if (!id) throw new Error("picks rejected or storage unavailable");
-      await navigator.clipboard.writeText(`${location.origin}/bracket/${id}`);
-      const copied = { picks, status: "copied" as const };
-      setLast(copied);
-      // Back to shareable after the confirmation; only if nothing changed since.
-      setTimeout(() => setLast((cur) => (cur === copied ? null : cur)), 2500);
-    } catch (error) {
-      console.error("bracket share failed:", error);
-      setLast({ picks, status: "error" });
+      setResult({
+        picks,
+        name: trimmed,
+        url: `${location.origin}/arena/b/${id}`,
+      });
+    } catch (err) {
+      console.error("bracket share failed:", err);
+      setError(true);
+    } finally {
+      setBusy(false);
     }
   };
 
-  if (status === "copied")
-    return (
-      <Button variant="outline" size="sm" disabled className="text-pick">
-        <Check className="size-3.5" />
-        Link copied
-      </Button>
-    );
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={share}
-      disabled={status === "saving" || Object.keys(picks).length === 0}
-    >
-      <Share2 className="size-3.5" />
-      {status === "error"
-        ? "Couldn't share — try again"
-        : "Share your prediction"}
-    </Button>
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        disabled={empty}
+      >
+        <Share2 className="size-3.5" />
+        Share your bracket
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={current ? "Your bracket is ready" : "Share your bracket"}
+      >
+        {current ? (
+          <ShareResult name={current.name} url={current.url} />
+        ) : (
+          <form onSubmit={submit} className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Add your name so your bracket can join the leaderboard, then share
+              the link.
+            </p>
+            {/* biome-ignore lint/a11y/noAutofocus: the name field is the modal's sole purpose */}
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={40}
+              placeholder="Your name"
+              aria-label="Your name"
+              autoFocus
+              className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm text-foreground placeholder:text-subtle-foreground focus:border-border-strong focus:outline-none"
+            />
+            <Button type="submit" disabled={busy || !name.trim() || empty}>
+              <Share2 className="size-3.5" />
+              {busy ? "Creating link…" : "Create shareable link"}
+            </Button>
+            {error && (
+              <p className="text-xs text-red-400">
+                Couldn’t share — try again.
+              </p>
+            )}
+          </form>
+        )}
+      </Modal>
+    </>
   );
 }
 
 /** The board every bracket page draws on: the R32 occupants and the played
  *  winners, derived from the live results. */
 function useBoard(results: Results) {
-  return useMemo(
-    () => ({ slots: confirmedSlots(results), winners: playedWinners(results) }),
-    [results],
-  );
+  return useMemo(() => buildBoard(results), [results]);
 }
 
 /** A shared prediction laid over the live board, read-only: no tap-to-advance
- *  and no share button. */
+ *  and no share button. With `reasoning` (match → why the pick was made), tapping
+ *  a pick node reveals it in a popover. */
 export function SharedBracket({
   results,
   picks,
+  reasoning,
 }: {
   results: Results;
   picks: Picks;
+  reasoning?: Map<number, string>;
 }) {
   const { slots, winners } = useBoard(results);
+  const nodeNote = reasoning
+    ? (ref: BracketNodeRef) => (ref.side ? undefined : reasoning.get(ref.match))
+    : undefined;
   return (
-    <CircularBracket slots={slots} results={winners} predictions={picks} />
+    <CircularBracket
+      slots={slots}
+      results={winners}
+      predictions={picks}
+      nodeNote={nodeNote}
+    />
   );
 }
 
 /** The bracket as a build-your-own-prediction board: tap any team to advance
  *  it into the next round, all the way to the title. Sharing stores the picks
- *  and hands out a read-only /bracket/<id> link. */
+ *  and hands out a read-only /arena/b/<id> link. */
 export function BracketBuilder({ results }: { results: Results }) {
   const { slots, winners } = useBoard(results);
   const [picks, setPicks] = useState<Picks>({});
@@ -158,7 +236,7 @@ export function BracketBuilder({ results }: { results: Results }) {
         }
       />
       <div className="mt-5 flex justify-center">
-        <ShareButton picks={picks} />
+        <ShareBracket picks={picks} />
       </div>
     </>
   );

@@ -306,7 +306,9 @@ function matchSubtitle(num: number): string {
 }
 
 const pct = (v: number) => `${(v / SIZE) * 100}%`;
+// Precise form drives the bar widths; the label rounds to whole points.
 const formatPct = (p: number) => `${(p * 100).toPrecision(4)}%`;
+const formatPctLabel = (p: number) => `${Math.round(p * 100)}%`;
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
@@ -409,10 +411,24 @@ function Connectors({
   );
 }
 
+// A move is worth showing when the shift from baseline clears ~1 point.
+const hasMoved = (c: Candidate) =>
+  Math.abs(c.probability - (c.baseline ?? c.probability)) > 0.01;
+
 /** A single team's chance, as a flag + code + bar + percentage — the row style
  *  used across the prediction widgets. Rows fade in and their bars sweep out
  *  from the left when the popover opens. */
-function OddsRow({ c, top }: { c: Candidate; top: boolean }) {
+function OddsRow({
+  c,
+  top,
+  wideLabel,
+}: {
+  c: Candidate;
+  top: boolean;
+  /** Reserve room for a "start -> now" move label so every row's bar track — the
+   *  flex-1 remainder — is the same width and the bars stay comparable. */
+  wideLabel: boolean;
+}) {
   // The white bar always spans the initial value. A rise shows as green added
   // to its right (bar reaches `now`); a fall as red laid over its right edge
   // (the lost slice between `now` and `start`).
@@ -421,10 +437,10 @@ function OddsRow({ c, top }: { c: Candidate; top: boolean }) {
   const start = c.baseline ?? now;
   const delta = now - start;
   const rose = delta > 0;
-  const moved = Math.abs(delta) > 0.01; // worth showing (>1pt)
+  const moved = hasMoved(c);
   const pctLabel = moved
-    ? `${formatPct(start)} -> ${formatPct(now)}`
-    : formatPct(now);
+    ? `${formatPctLabel(start)} -> ${formatPctLabel(now)}`
+    : formatPctLabel(now);
   const barTitle = moved
     ? `now ${formatPct(now)} · start ${formatPct(start)}`
     : undefined;
@@ -466,7 +482,8 @@ function OddsRow({ c, top }: { c: Candidate; top: boolean }) {
       </span>
       <span
         className={cn(
-          "min-w-8 whitespace-nowrap pr-0.5 text-right text-xs tabular-nums",
+          "shrink-0 whitespace-nowrap pr-0.5 text-right text-xs tabular-nums",
+          wideLabel ? "w-24" : "w-10",
           top ? "font-semibold text-foreground" : "text-muted-foreground",
         )}
       >
@@ -507,6 +524,9 @@ function OddsList({
   live?: boolean;
 }) {
   const shown = odds.filter((c) => c.probability >= 0.01).slice(0, 8);
+  // Size the label column once for the whole list: only widen for a "start -> now"
+  // label when some row actually moved, so equal tracks never cost extra room.
+  const wideLabel = shown.some(hasMoved);
   return (
     <div className="relative">
       {live && <LiveBadge className="absolute top-0 right-0" />}
@@ -515,7 +535,9 @@ function OddsList({
         {shown.length === 0 ? (
           <p className="text-xs text-muted-foreground/50 italic">no market</p>
         ) : (
-          shown.map((c, i) => <OddsRow key={c.code} c={c} top={i === 0} />)
+          shown.map((c, i) => (
+            <OddsRow key={c.code} c={c} top={i === 0} wideLabel={wideLabel} />
+          ))
         )}
       </div>
     </div>
